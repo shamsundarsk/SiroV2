@@ -24,8 +24,7 @@ const PRIORITY_COLORS: Record<Task["priority"], string> = {
 };
 
 export default function NewTaskScreen() {
-  const { projects, addTask, currentUser } = useApp();
-  const colorScheme = useColorScheme();
+Scheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();

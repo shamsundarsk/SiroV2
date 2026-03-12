@@ -24,16 +24,16 @@ const ROOMS = [
   { id: "random", name: "Random", icon: "coffee" },
 ];
 
-const DEMO_NAMES = ["Alex Johnson", "Jamie Lee", "Sam Rivera", "Morgan Chen"];
-
 function MessageBubble({
   message,
   isOwn,
   isDark,
+  myId,
 }: {
   message: ChatMessage;
   isOwn: boolean;
   isDark: boolean;
+  myId: string;
 }) {
   const theme = isDark ? Colors.dark : Colors.light;
   const time = new Date(message.timestamp).toLocaleTimeString([], {
@@ -48,9 +48,8 @@ function MessageBubble({
     .toUpperCase()
     .slice(0, 2);
 
-  const avatarColor = Colors.projects[
-    Math.abs(message.authorId.charCodeAt(0)) % Colors.projects.length
-  ];
+  const avatarColor =
+    Colors.projects[Math.abs(message.authorId.charCodeAt(0)) % Colors.projects.length];
 
   return (
     <View style={[styles.messageRow, isOwn && styles.messageRowOwn]}>
@@ -70,7 +69,11 @@ function MessageBubble({
             styles.bubble,
             isOwn
               ? { backgroundColor: Colors.primary }
-              : { backgroundColor: isDark ? Colors.dark.surfaceSecondary : Colors.light.surfaceSecondary },
+              : {
+                  backgroundColor: isDark
+                    ? Colors.dark.surfaceSecondary
+                    : Colors.light.surfaceSecondary,
+                },
           ]}
         >
           <Text style={[styles.bubbleText, { color: isOwn ? "#fff" : theme.text }]}>
@@ -84,7 +87,7 @@ function MessageBubble({
 }
 
 export default function ChatScreen() {
-  const { chatMessages, sendMessage, currentUser } = useApp();
+  const { chatMessages, sendMessage, userProfile } = useApp();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = isDark ? Colors.dark : Colors.light;
@@ -97,6 +100,7 @@ export default function ChatScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
+  const myId = userProfile?.id || "anon";
   const roomMessages = chatMessages.filter((m) => m.roomId === activeRoom);
 
   const handleSend = () => {
@@ -105,36 +109,46 @@ export default function ChatScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     sendMessage(activeRoom, txt);
     setInput("");
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
   const renderItem = ({ item }: { item: ChatMessage }) => (
-    <MessageBubble
-      message={item}
-      isOwn={item.authorId === currentUser.id}
-      isDark={isDark}
-    />
+    <MessageBubble message={item} isOwn={item.authorId === myId} isDark={isDark} myId={myId} />
   );
 
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={0}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
     >
-      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: topPad + 12, backgroundColor: theme.surface, borderBottomColor: theme.border },
+        ]}
+      >
         <Text style={[styles.screenTitle, { color: theme.text }]}>Team Chat</Text>
         <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>
           {ROOMS.find((r) => r.id === activeRoom)?.name || "Chat"}
         </Text>
       </View>
 
-      <View style={[styles.roomTabs, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+      <View
+        style={[
+          styles.roomTabs,
+          { backgroundColor: theme.surface, borderBottomColor: theme.border },
+        ]}
+      >
         {ROOMS.map((room) => (
           <Pressable
             key={room.id}
             style={[
               styles.roomTab,
-              activeRoom === room.id && { borderBottomColor: Colors.primary, borderBottomWidth: 2 },
+              activeRoom === room.id && {
+                borderBottomColor: Colors.primary,
+                borderBottomWidth: 2,
+              },
             ]}
             onPress={() => setActiveRoom(room.id)}
           >
@@ -160,13 +174,10 @@ export default function ChatScreen() {
         data={roomMessages}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={[
-          styles.messagesList,
-          { paddingBottom: bottomPad + 16 },
-        ]}
-        onContentSizeChange={() =>
-          flatListRef.current?.scrollToEnd({ animated: false })
-        }
+        contentContainerStyle={[styles.messagesList, { paddingBottom: 8 }]}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <View style={styles.emptyChat}>
             <Feather name="message-circle" size={36} color={theme.textTertiary} />
@@ -186,14 +197,18 @@ export default function ChatScreen() {
           {
             backgroundColor: theme.surface,
             borderTopColor: theme.border,
-            paddingBottom: bottomPad + 8,
+            paddingBottom: Math.max(bottomPad, 8) + 4,
           },
         ]}
       >
         <TextInput
           style={[
             styles.textInput,
-            { backgroundColor: theme.surfaceSecondary, color: theme.text, borderColor: theme.border },
+            {
+              backgroundColor: theme.surfaceSecondary,
+              color: theme.text,
+              borderColor: theme.border,
+            },
           ]}
           value={input}
           onChangeText={setInput}
@@ -204,6 +219,7 @@ export default function ChatScreen() {
           returnKeyType="send"
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
+          textAlignVertical="center"
         />
         <Pressable
           style={[
@@ -213,11 +229,7 @@ export default function ChatScreen() {
           onPress={handleSend}
           disabled={!input.trim()}
         >
-          <Feather
-            name="send"
-            size={18}
-            color={input.trim() ? "#fff" : theme.textTertiary}
-          />
+          <Feather name="send" size={18} color={input.trim() ? "#fff" : theme.textTertiary} />
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -249,6 +261,7 @@ const styles = StyleSheet.create({
   messagesList: {
     paddingHorizontal: 16,
     paddingTop: 12,
+    flexGrow: 1,
   },
   messageRow: {
     flexDirection: "row",
@@ -263,6 +276,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   avatarText: { color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" },
   bubbleWrapper: { maxWidth: "75%", gap: 3 },
@@ -285,26 +299,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
     gap: 8,
   },
   textInput: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 100,
-    borderRadius: 20,
-    paddingHorizontal: 14,
+    minHeight: 44,
+    maxHeight: 120,
+    borderRadius: 22,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
     borderWidth: 1,
   },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
 });

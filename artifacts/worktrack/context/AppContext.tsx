@@ -8,7 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AppState, AppStateStatus } from "react-native";
+import { Alert, AppState, AppStateStatus } from "react-native";
 
 export type TaskCategory =
   | "Design"
@@ -17,6 +17,26 @@ export type TaskCategory =
   | "Meeting"
   | "Research"
   | "Other";
+
+export type UserRole = "firm_worker" | "freelancer";
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  firmName: string;
+  onboarded: boolean;
+}
+
+export interface AppSettings {
+  notificationsEnabled: boolean;
+  taskReminderMinutes: number;
+  voiceAgentEnabled: boolean;
+  voiceAgentDelayMinutes: number;
+  monitoringEnabled: boolean;
+  idleAlertMinutes: number;
+}
 
 export interface Project {
   id: string;
@@ -72,8 +92,10 @@ export interface ScreenTimeRecord {
 
 export interface AppUsageRecord {
   appName: string;
+  icon: string;
   totalTime: number;
   date: string;
+  category: "social" | "entertainment" | "productivity" | "other";
 }
 
 const STORAGE_KEYS = {
@@ -82,7 +104,8 @@ const STORAGE_KEYS = {
   RUNNING_TIMER: "worktrack:running_timer",
   CHAT_MESSAGES: "worktrack:chat_messages",
   TASKS: "worktrack:tasks",
-  CURRENT_USER: "worktrack:current_user",
+  USER_PROFILE: "worktrack:user_profile",
+  SETTINGS: "worktrack:settings",
   SCREEN_TIME: "worktrack:screen_time",
   APP_USAGE: "worktrack:app_usage",
   NOTIFICATIONS: "worktrack:notifications",
@@ -94,30 +117,46 @@ const DEFAULT_PROJECTS: Project[] = [
   { id: "p3", name: "Marketing Campaign", color: "#8B5CF6", createdAt: Date.now() },
 ];
 
-const DEFAULT_USER = {
-  id: "user_" + Date.now().toString(36),
-  name: "Alex Johnson",
+const DEFAULT_SETTINGS: AppSettings = {
+  notificationsEnabled: true,
+  taskReminderMinutes: 30,
+  voiceAgentEnabled: true,
+  voiceAgentDelayMinutes: 5,
+  monitoringEnabled: true,
+  idleAlertMinutes: 20,
 };
 
+const SIMULATED_APPS: Omit<AppUsageRecord, "totalTime" | "date">[] = [
+  { appName: "Instagram", icon: "instagram", category: "social" },
+  { appName: "YouTube", icon: "youtube", category: "entertainment" },
+  { appName: "WhatsApp", icon: "message-circle", category: "social" },
+  { appName: "Twitter / X", icon: "twitter", category: "social" },
+  { appName: "Netflix", icon: "film", category: "entertainment" },
+  { appName: "Spotify", icon: "music", category: "entertainment" },
+  { appName: "Safari / Chrome", icon: "globe", category: "productivity" },
+  { appName: "Messages", icon: "mail", category: "social" },
+];
+
 interface AppContextValue {
+  userProfile: UserProfile | null;
+  settings: AppSettings;
   projects: Project[];
   timeEntries: TimeEntry[];
   runningTimer: RunningTimer | null;
   chatMessages: ChatMessage[];
   tasks: Task[];
-  currentUser: { id: string; name: string };
   screenTimeRecords: ScreenTimeRecord[];
   appUsageRecords: AppUsageRecord[];
   notifications: string[];
+  voiceAgentActive: boolean;
+
+  completeOnboarding: (profile: Omit<UserProfile, "id" | "onboarded">) => void;
+  updateSettings: (updates: Partial<AppSettings>) => void;
 
   addProject: (project: Omit<Project, "id" | "createdAt">) => void;
   deleteProject: (id: string) => void;
 
-  startTimer: (
-    projectId: string,
-    category: TaskCategory,
-    description: string
-  ) => void;
+  startTimer: (projectId: string, category: TaskCategory, description: string) => void;
   stopTimer: () => void;
   addManualEntry: (entry: Omit<TimeEntry, "id">) => void;
   updateTimeEntry: (id: string, updates: Partial<TimeEntry>) => void;
@@ -131,11 +170,12 @@ interface AppContextValue {
 
   recordScreenTime: (screen: string, durationMs: number) => void;
   dismissNotification: (idx: number) => void;
+  dismissVoiceAgent: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-function genId(): string {
+export function genId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 }
 
@@ -143,21 +183,42 @@ function todayStr(): string {
   return new Date().toISOString().split("T")[0];
 }
 
+function generateSimulatedAppUsage(): AppUsageRecord[] {
+  const today = todayStr();
+  return SIMULATED_APPS.slice(0, 4 + Math.floor(Math.random() * 4)).map((app) => ({
+    ...app,
+    totalTime: Math.floor(Math.random() * 45 + 5) * 60 * 1000,
+    date: today,
+  }));
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [projects, setProjects] = useState<Project[]>(DEFAULT_PROJECTS);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [runningTimer, setRunningTimer] = useState<RunningTimer | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [currentUser] = useState(DEFAULT_USER);
   const [screenTimeRecords, setScreenTimeRecords] = useState<ScreenTimeRecord[]>([]);
   const [appUsageRecords, setAppUsageRecords] = useState<AppUsageRecord[]>([]);
   const [notifications, setNotifications] = useState<string[]>([]);
+  const [voiceAgentActive, setVoiceAgentActive] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const appBgStartRef = useRef<number | null>(null);
-  const idleCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const voiceAgentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runningTimerRef = useRef<RunningTimer | null>(null);
+  const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    runningTimerRef.current = runningTimer;
+  }, [runningTimer]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
     loadAll();
@@ -166,6 +227,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function loadAll() {
     try {
       const [
+        profileRaw,
+        settingsRaw,
         projRaw,
         entriesRaw,
         timerRaw,
@@ -175,6 +238,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         appUsageRaw,
         notifRaw,
       ] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE),
+        AsyncStorage.getItem(STORAGE_KEYS.SETTINGS),
         AsyncStorage.getItem(STORAGE_KEYS.PROJECTS),
         AsyncStorage.getItem(STORAGE_KEYS.TIME_ENTRIES),
         AsyncStorage.getItem(STORAGE_KEYS.RUNNING_TIMER),
@@ -184,13 +249,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.getItem(STORAGE_KEYS.APP_USAGE),
         AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS),
       ]);
+      if (profileRaw) setUserProfile(JSON.parse(profileRaw));
+      if (settingsRaw) {
+        const s = JSON.parse(settingsRaw);
+        setSettings(s);
+        settingsRef.current = s;
+      }
       if (projRaw) setProjects(JSON.parse(projRaw));
       if (entriesRaw) setTimeEntries(JSON.parse(entriesRaw));
-      if (timerRaw) setRunningTimer(JSON.parse(timerRaw));
+      if (timerRaw) {
+        const t = JSON.parse(timerRaw);
+        setRunningTimer(t);
+        runningTimerRef.current = t;
+      }
       if (chatRaw) setChatMessages(JSON.parse(chatRaw));
       if (tasksRaw) setTasks(JSON.parse(tasksRaw));
       if (screenRaw) setScreenTimeRecords(JSON.parse(screenRaw));
-      if (appUsageRaw) setAppUsageRecords(JSON.parse(appUsageRaw));
+      if (appUsageRaw) {
+        const usage: AppUsageRecord[] = JSON.parse(appUsageRaw);
+        const today = todayStr();
+        const hasToday = usage.some((r) => r.date === today);
+        if (!hasToday) {
+          const simulated = generateSimulatedAppUsage();
+          const combined = [...usage, ...simulated];
+          setAppUsageRecords(combined);
+          AsyncStorage.setItem(STORAGE_KEYS.APP_USAGE, JSON.stringify(combined));
+        } else {
+          setAppUsageRecords(usage);
+        }
+      } else {
+        const simulated = generateSimulatedAppUsage();
+        setAppUsageRecords(simulated);
+        AsyncStorage.setItem(STORAGE_KEYS.APP_USAGE, JSON.stringify(simulated));
+      }
       if (notifRaw) setNotifications(JSON.parse(notifRaw));
     } catch {}
     setLoaded(true);
@@ -201,6 +292,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await AsyncStorage.setItem(key, JSON.stringify(value));
     } catch {}
   }, []);
+
+  const completeOnboarding = useCallback(
+    (profile: Omit<UserProfile, "id" | "onboarded">) => {
+      const newProfile: UserProfile = {
+        ...profile,
+        id: genId(),
+        onboarded: true,
+      };
+      setUserProfile(newProfile);
+      persist(STORAGE_KEYS.USER_PROFILE, newProfile);
+    },
+    [persist]
+  );
+
+  const updateSettings = useCallback(
+    (updates: Partial<AppSettings>) => {
+      setSettings((prev) => {
+        const next = { ...prev, ...updates };
+        settingsRef.current = next;
+        persist(STORAGE_KEYS.SETTINGS, next);
+        return next;
+      });
+    },
+    [persist]
+  );
 
   const addProject = useCallback(
     (project: Omit<Project, "id" | "createdAt">) => {
@@ -227,19 +343,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const startTimer = useCallback(
     (projectId: string, category: TaskCategory, description: string) => {
-      const timer: RunningTimer = {
-        projectId,
-        category,
-        description,
-        startTime: Date.now(),
-      };
+      const timer: RunningTimer = { projectId, category, description, startTime: Date.now() };
       setRunningTimer(timer);
+      runningTimerRef.current = timer;
       persist(STORAGE_KEYS.RUNNING_TIMER, timer);
     },
     [persist]
   );
 
   const stopTimer = useCallback(() => {
+    if (voiceAgentTimerRef.current) {
+      clearTimeout(voiceAgentTimerRef.current);
+      voiceAgentTimerRef.current = null;
+    }
+    setVoiceAgentActive(false);
+
     setRunningTimer((prev) => {
       if (!prev) return null;
       const endTime = Date.now();
@@ -259,6 +377,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       persist(STORAGE_KEYS.RUNNING_TIMER, null);
+      runningTimerRef.current = null;
       return null;
     });
   }, [persist]);
@@ -299,11 +418,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const sendMessage = useCallback(
     (roomId: string, text: string) => {
+      const name = userProfile?.name || "Worker";
+      const userId = userProfile?.id || "anon";
       const msg: ChatMessage = {
         id: genId(),
         roomId,
-        authorName: currentUser.name,
-        authorId: currentUser.id,
+        authorName: name,
+        authorId: userId,
         text,
         timestamp: Date.now(),
       };
@@ -313,7 +434,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
     },
-    [currentUser, persist]
+    [userProfile, persist]
   );
 
   const addTask = useCallback(
@@ -353,6 +474,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const recordScreenTime = useCallback(
     (screen: string, durationMs: number) => {
       const today = todayStr();
+      const s = settingsRef.current;
       setScreenTimeRecords((prev) => {
         const existing = prev.find((r) => r.screen === screen && r.date === today);
         let next: ScreenTimeRecord[];
@@ -363,17 +485,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               : r
           );
         } else {
-          next = [
-            ...prev,
-            { screen, totalTime: durationMs, sessions: [], date: today },
-          ];
+          next = [...prev, { screen, totalTime: durationMs, sessions: [], date: today }];
         }
         persist(STORAGE_KEYS.SCREEN_TIME, next);
         return next;
       });
 
-      if (durationMs > 20 * 60 * 1000) {
-        const msg = `You've spent ${Math.floor(durationMs / 60000)} min on ${screen}. Time to get back to work!`;
+      if (s.notificationsEnabled && durationMs > s.idleAlertMinutes * 60 * 1000) {
+        const msg = `Idle alert: ${Math.floor(durationMs / 60000)} min spent away. Time to get back to work!`;
         setNotifications((prev) => {
           const next = [...prev, msg];
           persist(STORAGE_KEYS.NOTIFICATIONS, next);
@@ -384,43 +503,76 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [persist]
   );
 
-  const dismissNotification = useCallback((idx: number) => {
-    setNotifications((prev) => {
-      const next = prev.filter((_, i) => i !== idx);
-      persist(STORAGE_KEYS.NOTIFICATIONS, next);
-      return next;
-    });
-  }, [persist]);
+  const dismissNotification = useCallback(
+    (idx: number) => {
+      setNotifications((prev) => {
+        const next = prev.filter((_, i) => i !== idx);
+        persist(STORAGE_KEYS.NOTIFICATIONS, next);
+        return next;
+      });
+    },
+    [persist]
+  );
+
+  const dismissVoiceAgent = useCallback(() => {
+    setVoiceAgentActive(false);
+    if (voiceAgentTimerRef.current) {
+      clearTimeout(voiceAgentTimerRef.current);
+      voiceAgentTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
+      const s = settingsRef.current;
+      const timer = runningTimerRef.current;
+
       if (appStateRef.current === "active" && nextState !== "active") {
         appBgStartRef.current = Date.now();
+
+        if (timer && s.voiceAgentEnabled) {
+          const delayMs = s.voiceAgentDelayMinutes * 60 * 1000;
+          voiceAgentTimerRef.current = setTimeout(() => {
+            setVoiceAgentActive(true);
+          }, delayMs);
+        }
       }
+
       if (appStateRef.current !== "active" && nextState === "active") {
+        if (voiceAgentTimerRef.current) {
+          clearTimeout(voiceAgentTimerRef.current);
+          voiceAgentTimerRef.current = null;
+        }
+
         if (appBgStartRef.current) {
           const bgTime = Date.now() - appBgStartRef.current;
           const today = todayStr();
+
           setAppUsageRecords((prev) => {
-            const existing = prev.find(
-              (r) => r.appName === "Background" && r.date === today
-            );
+            const existing = prev.find((r) => r.appName === "Other Apps" && r.date === today);
             let next: AppUsageRecord[];
             if (existing) {
               next = prev.map((r) =>
-                r.appName === "Background" && r.date === today
+                r.appName === "Other Apps" && r.date === today
                   ? { ...r, totalTime: r.totalTime + bgTime }
                   : r
               );
             } else {
               next = [
                 ...prev,
-                { appName: "Background", totalTime: bgTime, date: today },
+                {
+                  appName: "Other Apps",
+                  icon: "smartphone",
+                  totalTime: bgTime,
+                  date: today,
+                  category: "other",
+                },
               ];
             }
             persist(STORAGE_KEYS.APP_USAGE, next);
             return next;
           });
+
           appBgStartRef.current = null;
         }
       }
@@ -431,15 +583,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
+      userProfile,
+      settings,
       projects,
       timeEntries,
       runningTimer,
       chatMessages,
       tasks,
-      currentUser,
       screenTimeRecords,
       appUsageRecords,
       notifications,
+      voiceAgentActive,
+      completeOnboarding,
+      updateSettings,
       addProject,
       deleteProject,
       startTimer,
@@ -453,30 +609,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       deleteTask,
       recordScreenTime,
       dismissNotification,
+      dismissVoiceAgent,
     }),
     [
-      projects,
-      timeEntries,
-      runningTimer,
-      chatMessages,
-      tasks,
-      currentUser,
-      screenTimeRecords,
-      appUsageRecords,
-      notifications,
-      addProject,
-      deleteProject,
-      startTimer,
-      stopTimer,
-      addManualEntry,
-      updateTimeEntry,
-      deleteTimeEntry,
-      sendMessage,
-      addTask,
-      updateTask,
-      deleteTask,
-      recordScreenTime,
-      dismissNotification,
+      userProfile, settings, projects, timeEntries, runningTimer, chatMessages,
+      tasks, screenTimeRecords, appUsageRecords, notifications, voiceAgentActive,
+      completeOnboarding, updateSettings, addProject, deleteProject, startTimer,
+      stopTimer, addManualEntry, updateTimeEntry, deleteTimeEntry, sendMessage,
+      addTask, updateTask, deleteTask, recordScreenTime, dismissNotification, dismissVoiceAgent,
     ]
   );
 
