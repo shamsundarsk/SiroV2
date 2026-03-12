@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import {
   TaskCategory,
-  formatDuration,
+  formatTimerDuration,
   formatTime,
   isToday,
   useApp,
@@ -147,7 +147,7 @@ export default function TimerScreen() {
             </View>
 
             <View style={styles.activeTimerHeader}>
-              <Text style={styles.activeTimerElapsed}>{formatDuration(elapsed)}</Text>
+              <Text style={styles.activeTimerElapsed}>{formatTimerDuration(elapsed)}</Text>
               <View style={styles.liveIndicator}>
                 <Animated.View style={[styles.liveDot, { transform: [{ scale: pulseAnim }] }]} />
                 <Text style={styles.liveText}>LIVE</Text>

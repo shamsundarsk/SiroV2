@@ -62,15 +62,6 @@ export interface RunningTimer {
   startTime: number;
 }
 
-export interface ChatMessage {
-  id: string;
-  roomId: string;
-  authorName: string;
-  authorId: string;
-  text: string;
-  timestamp: number;
-}
-
 export interface Task {
   id: string;
   title: string;
@@ -102,7 +93,6 @@ const STORAGE_KEYS = {
   PROJECTS: "worktrack:projects",
   TIME_ENTRIES: "worktrack:time_entries",
   RUNNING_TIMER: "worktrack:running_timer",
-  CHAT_MESSAGES: "worktrack:chat_messages",
   TASKS: "worktrack:tasks",
   USER_PROFILE: "worktrack:user_profile",
   SETTINGS: "worktrack:settings",
@@ -115,28 +105,6 @@ const DEFAULT_PROJECTS: Project[] = [
   { id: "p1", name: "Website Redesign", color: "#3B82F6", createdAt: Date.now() },
   { id: "p2", name: "Mobile App", color: "#10B981", createdAt: Date.now() },
   { id: "p3", name: "Marketing Campaign", color: "#8B5CF6", createdAt: Date.now() },
-];
-
-// Add some test time entries for debugging
-const createTestTimeEntries = (): TimeEntry[] => [
-  {
-    id: "test1",
-    projectId: "p1",
-    category: "Development",
-    description: "Working on homepage",
-    startTime: Date.now() - 3600000, // 1 hour ago
-    endTime: Date.now() - 1800000, // 30 minutes ago
-    duration: 1800, // 30 minutes in seconds
-  },
-  {
-    id: "test2", 
-    projectId: "p2",
-    category: "Design",
-    description: "UI mockups",
-    startTime: Date.now() - 7200000, // 2 hours ago
-    endTime: Date.now() - 5400000, // 1.5 hours ago
-    duration: 1800, // 30 minutes in seconds
-  }
 ];
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -165,7 +133,6 @@ interface AppContextValue {
   projects: Project[];
   timeEntries: TimeEntry[];
   runningTimer: RunningTimer | null;
-  chatMessages: ChatMessage[];
   tasks: Task[];
   screenTimeRecords: ScreenTimeRecord[];
   appUsageRecords: AppUsageRecord[];
@@ -183,8 +150,6 @@ interface AppContextValue {
   addManualEntry: (entry: Omit<TimeEntry, "id">) => void;
   updateTimeEntry: (id: string, updates: Partial<TimeEntry>) => void;
   deleteTimeEntry: (id: string) => void;
-
-  sendMessage: (roomId: string, text: string) => void;
 
   addTask: (task: Omit<Task, "id" | "createdAt">) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
@@ -220,7 +185,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(DEFAULT_PROJECTS);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [runningTimer, setRunningTimer] = useState<RunningTimer | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [screenTimeRecords, setScreenTimeRecords] = useState<ScreenTimeRecord[]>([]);
   const [appUsageRecords, setAppUsageRecords] = useState<AppUsageRecord[]>([]);
@@ -254,7 +218,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         projRaw,
         entriesRaw,
         timerRaw,
-        chatRaw,
         tasksRaw,
         screenRaw,
         appUsageRaw,
@@ -265,7 +228,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.getItem(STORAGE_KEYS.PROJECTS),
         AsyncStorage.getItem(STORAGE_KEYS.TIME_ENTRIES),
         AsyncStorage.getItem(STORAGE_KEYS.RUNNING_TIMER),
-        AsyncStorage.getItem(STORAGE_KEYS.CHAT_MESSAGES),
         AsyncStorage.getItem(STORAGE_KEYS.TASKS),
         AsyncStorage.getItem(STORAGE_KEYS.SCREEN_TIME),
         AsyncStorage.getItem(STORAGE_KEYS.APP_USAGE),
@@ -278,20 +240,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         settingsRef.current = s;
       }
       if (projRaw) setProjects(JSON.parse(projRaw));
-      if (entriesRaw) {
-        const entries = JSON.parse(entriesRaw);
-        setTimeEntries(entries);
-      } else {
-        const testEntries = createTestTimeEntries();
-        setTimeEntries(testEntries);
-        persist(STORAGE_KEYS.TIME_ENTRIES, testEntries);
-      }
+      if (entriesRaw) setTimeEntries(JSON.parse(entriesRaw));
       if (timerRaw) {
         const t = JSON.parse(timerRaw);
         setRunningTimer(t);
         runningTimerRef.current = t;
       }
-      if (chatRaw) setChatMessages(JSON.parse(chatRaw));
       if (tasksRaw) setTasks(JSON.parse(tasksRaw));
       if (screenRaw) setScreenTimeRecords(JSON.parse(screenRaw));
       if (appUsageRaw) {
@@ -445,27 +399,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [persist]
   );
 
-  const sendMessage = useCallback(
-    (roomId: string, text: string) => {
-      const name = userProfile?.name || "Worker";
-      const userId = userProfile?.id || "anon";
-      const msg: ChatMessage = {
-        id: genId(),
-        roomId,
-        authorName: name,
-        authorId: userId,
-        text,
-        timestamp: Date.now(),
-      };
-      setChatMessages((prev) => {
-        const next = [...prev, msg];
-        persist(STORAGE_KEYS.CHAT_MESSAGES, next);
-        return next;
-      });
-    },
-    [userProfile, persist]
-  );
-
   const addTask = useCallback(
     (task: Omit<Task, "id" | "createdAt">) => {
       const newTask: Task = { ...task, id: genId(), createdAt: Date.now() };
@@ -617,7 +550,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       projects,
       timeEntries,
       runningTimer,
-      chatMessages,
       tasks,
       screenTimeRecords,
       appUsageRecords,
@@ -632,7 +564,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addManualEntry,
       updateTimeEntry,
       deleteTimeEntry,
-      sendMessage,
       addTask,
       updateTask,
       deleteTask,
@@ -641,10 +572,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       dismissVoiceAgent,
     }),
     [
-      userProfile, settings, projects, timeEntries, runningTimer, chatMessages,
+      userProfile, settings, projects, timeEntries, runningTimer,
       tasks, screenTimeRecords, appUsageRecords, notifications, voiceAgentActive,
       completeOnboarding, updateSettings, addProject, deleteProject, startTimer,
-      stopTimer, addManualEntry, updateTimeEntry, deleteTimeEntry, sendMessage,
+      stopTimer, addManualEntry, updateTimeEntry, deleteTimeEntry,
       addTask, updateTask, deleteTask, recordScreenTime, dismissNotification, dismissVoiceAgent,
     ]
   );
@@ -667,6 +598,13 @@ export function formatDuration(seconds: number): string {
   if (h > 0) return `${h}h ${m.toString().padStart(2, "0")}m`;
   if (m > 0) return `${m}m ${s.toString().padStart(2, "0")}s`;
   return `${s}s`;
+}
+
+export function formatTimerDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
 export function formatDurationHM(seconds: number): string {

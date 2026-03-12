@@ -18,7 +18,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
-import { formatDuration, useApp } from "@/context/AppContext";
+import { formatTimerDuration, useApp } from "@/context/AppContext";
 
 function FloatingTimerBar() {
   const { runningTimer, stopTimer, projects } = useApp();
@@ -91,7 +91,7 @@ function FloatingTimerBar() {
           </View>
         </View>
 
-        <Text style={styles.floatingTime}>{formatDuration(elapsed)}</Text>
+        <Text style={styles.floatingTime}>{formatTimerDuration(elapsed)}</Text>
 
         <Pressable
           style={styles.floatingStopBtn}
@@ -123,10 +123,6 @@ function NativeTabLayout() {
         <NativeTabs.Trigger name="tasks">
           <Icon sf={{ default: "checkmark.square", selected: "checkmark.square.fill" }} />
           <Label>Tasks</Label>
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="chat">
-          <Icon sf={{ default: "bubble.left.and.bubble.right", selected: "bubble.left.and.bubble.right.fill" }} />
-          <Label>Chat</Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="monitor">
           <Icon sf={{ default: "eye", selected: "eye.fill" }} />
@@ -213,18 +209,6 @@ function ClassicTabLayout() {
                 <SymbolView name="checkmark.square" tintColor={color} size={24} />
               ) : (
                 <Feather name="check-square" size={22} color={color} />
-              ),
-          }}
-        />
-        <Tabs.Screen
-          name="chat"
-          options={{
-            title: "Chat",
-            tabBarIcon: ({ color }) =>
-              isIOS ? (
-                <SymbolView name="bubble.left.and.bubble.right" tintColor={color} size={24} />
-              ) : (
-                <Feather name="message-circle" size={22} color={color} />
               ),
           }}
         />
