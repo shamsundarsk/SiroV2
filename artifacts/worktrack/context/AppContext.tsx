@@ -117,6 +117,28 @@ const DEFAULT_PROJECTS: Project[] = [
   { id: "p3", name: "Marketing Campaign", color: "#8B5CF6", createdAt: Date.now() },
 ];
 
+// Add some test time entries for debugging
+const createTestTimeEntries = (): TimeEntry[] => [
+  {
+    id: "test1",
+    projectId: "p1",
+    category: "Development",
+    description: "Working on homepage",
+    startTime: Date.now() - 3600000, // 1 hour ago
+    endTime: Date.now() - 1800000, // 30 minutes ago
+    duration: 1800, // 30 minutes in seconds
+  },
+  {
+    id: "test2", 
+    projectId: "p2",
+    category: "Design",
+    description: "UI mockups",
+    startTime: Date.now() - 7200000, // 2 hours ago
+    endTime: Date.now() - 5400000, // 1.5 hours ago
+    duration: 1800, // 30 minutes in seconds
+  }
+];
+
 const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   taskReminderMinutes: 30,
@@ -256,7 +278,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         settingsRef.current = s;
       }
       if (projRaw) setProjects(JSON.parse(projRaw));
-      if (entriesRaw) setTimeEntries(JSON.parse(entriesRaw));
+      if (entriesRaw) {
+        const entries = JSON.parse(entriesRaw);
+        setTimeEntries(entries);
+      } else {
+        const testEntries = createTestTimeEntries();
+        setTimeEntries(testEntries);
+        persist(STORAGE_KEYS.TIME_ENTRIES, testEntries);
+      }
       if (timerRaw) {
         const t = JSON.parse(timerRaw);
         setRunningTimer(t);
