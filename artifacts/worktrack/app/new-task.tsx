@@ -24,6 +24,7 @@ const PRIORITY_COLORS: Record<Task["priority"], string> = {
 };
 
 export default function NewTaskScreen() {
+  const { projects, userProfile, addTask } = useApp();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = isDark ? Colors.dark : Colors.light;
@@ -33,7 +34,7 @@ export default function NewTaskScreen() {
   const [description, setDescription] = useState("");
   const [selectedProject, setSelectedProject] = useState(projects[0]?.id || "");
   const [priority, setPriority] = useState<Task["priority"]>("medium");
-  const [assignee, setAssignee] = useState(currentUser.name);
+  const [assignee, setAssignee] = useState(userProfile?.name || "");
 
   const handleSave = () => {
     if (!title.trim()) return;
