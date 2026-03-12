@@ -120,10 +120,6 @@ function NativeTabLayout() {
           <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
           <Label>Reports</Label>
         </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="tasks">
-          <Icon sf={{ default: "checkmark.square", selected: "checkmark.square.fill" }} />
-          <Label>Tasks</Label>
-        </NativeTabs.Trigger>
         <NativeTabs.Trigger name="monitor">
           <Icon sf={{ default: "eye", selected: "eye.fill" }} />
           <Label>Monitor</Label>
@@ -197,18 +193,6 @@ function ClassicTabLayout() {
                 <SymbolView name="chart.bar.fill" tintColor={color} size={24} />
               ) : (
                 <Feather name="bar-chart-2" size={22} color={color} />
-              ),
-          }}
-        />
-        <Tabs.Screen
-          name="tasks"
-          options={{
-            title: "Tasks",
-            tabBarIcon: ({ color }) =>
-              isIOS ? (
-                <SymbolView name="checkmark.square" tintColor={color} size={24} />
-              ) : (
-                <Feather name="check-square" size={22} color={color} />
               ),
           }}
         />

@@ -8,11 +8,15 @@ import {
   Text,
   View,
   useColorScheme,
+  Modal,
+  TextInput,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 
 import Colors from "@/constants/colors";
-import { formatDurationHM, useApp } from "@/context/AppContext";
+import { formatDurationHM, useApp, Task } from "@/context/AppContext";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -21,7 +25,7 @@ const MONTHS = [
 ];
 
 export default function CalendarScreen() {
-  const { timeEntries, tasks, projects, runningTimer } = useApp();
+  const { timeEntries, tasks, projects, runningTimer, addTask, updateTask, deleteTask } = useApp();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = isDark ? Colors.dark : Colors.light;
@@ -29,6 +33,12 @@ export default function CalendarScreen() {
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate());
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [taskPriority, setTaskPriority] = useState<Task["priority"]>("medium");
+  const [selectedProject, setSelectedProject] = useState(projects[0]?.id || "");
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // Real-time timer updates
   useEffect(() => {
@@ -159,6 +169,84 @@ export default function CalendarScreen() {
     ? entriesByDay[selectedDay].total
     : 0;
 
+  const openTaskModal = (task?: Task) => {
+    if (task) {
+      setEditingTask(task);
+      setTaskTitle(task.title);
+      setTaskDescription(task.description);
+      setTaskPriority(task.priority);
+      setSelectedProject(task.projectId);
+    } else {
+      setEditingTask(null);
+      setTaskTitle("");
+      setTaskDescription("");
+      setTaskPriority("medium");
+      setSelectedProject(projects[0]?.id || "");
+    }
+    setShowTaskModal(true);
+  };
+
+  const closeTaskModal = () => {
+    setShowTaskModal(false);
+    setEditingTask(null);
+    setTaskTitle("");
+    setTaskDescription("");
+    setTaskPriority("medium");
+  };
+
+  const handleSaveTask = () => {
+    if (!taskTitle.trim() || !selectedDay) return;
+    
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const dueDate = new Date(year, month, selectedDay).getTime();
+    
+    if (editingTask) {
+      updateTask(editingTask.id, {
+        title: taskTitle.trim(),
+        description: taskDescription,
+        priority: taskPriority,
+        projectId: selectedProject,
+        dueDate,
+      });
+    } else {
+      addTask({
+        title: taskTitle.trim(),
+        description: taskDescription,
+        projectId: selectedProject,
+        assignee: "You",
+        dueDate,
+        completed: false,
+        priority: taskPriority,
+      });
+    }
+    
+    closeTaskModal();
+  };
+
+  const handleDeleteTask = (task: Task) => {
+    Alert.alert(
+      "Delete Task",
+      "Are you sure you want to delete this task?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+            deleteTask(task.id);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleTask = (task: Task) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    updateTask(task.id, { completed: !task.completed });
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
@@ -169,10 +257,23 @@ export default function CalendarScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.screenTitle, { color: theme.text }]}>Calendar</Text>
-        <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>
-          Time entries & due dates
-        </Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={[styles.screenTitle, { color: theme.text }]}>Calendar</Text>
+            <Text style={[styles.screenSubtitle, { color: theme.textSecondary }]}>
+              Time entries & tasks
+            </Text>
+          </View>
+          {selectedDay && (
+            <Pressable
+              style={[styles.addTaskBtn, { backgroundColor: Colors.primary }]}
+              onPress={() => openTaskModal()}
+            >
+              <Feather name="plus" size={18} color="#fff" />
+              <Text style={styles.addTaskBtnText}>Add Task</Text>
+            </Pressable>
+          )}
+        </View>
 
         <View style={[styles.calendarCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.calendarHeader}>
@@ -309,31 +410,166 @@ export default function CalendarScreen() {
 
             {selectedTasks.map((task) => {
               const proj = projects.find((p) => p.id === task.projectId);
+              const priorityColor = task.priority === "high" ? Colors.danger : 
+                                 task.priority === "medium" ? Colors.warning : Colors.accent;
               return (
-                <View
+                <Pressable
                   key={task.id}
                   style={[styles.taskRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                  onPress={() => openTaskModal(task)}
                 >
-                  <View style={[styles.taskDot, { backgroundColor: Colors.warning }]} />
+                  <Pressable
+                    style={[styles.taskCheckbox, { borderColor: theme.border }]}
+                    onPress={() => handleToggleTask(task)}
+                  >
+                    {task.completed && (
+                      <Feather name="check" size={14} color={Colors.accent} />
+                    )}
+                  </Pressable>
                   <View style={styles.taskContent}>
                     <Text style={[styles.taskTitle, { color: theme.text }, task.completed && styles.taskDone]}>
                       {task.title}
                     </Text>
+                    {task.description && (
+                      <Text style={[styles.taskDescription, { color: theme.textSecondary }]}>
+                        {task.description}
+                      </Text>
+                    )}
                     {proj && (
                       <Text style={[styles.taskProject, { color: theme.textSecondary }]}>
                         {proj.name}
                       </Text>
                     )}
                   </View>
-                  <View style={[styles.priorityBadge, { backgroundColor: Colors.warning + "22" }]}>
-                    <Text style={[styles.priorityText, { color: Colors.warning }]}>Due</Text>
+                  <View style={styles.taskActions}>
+                    <View style={[styles.priorityBadge, { backgroundColor: priorityColor + "22" }]}>
+                      <Text style={[styles.priorityText, { color: priorityColor }]}>
+                        {task.priority.toUpperCase()}
+                      </Text>
+                    </View>
+                    <Pressable
+                      style={styles.deleteTaskBtn}
+                      onPress={() => handleDeleteTask(task)}
+                    >
+                      <Feather name="trash-2" size={14} color={theme.textTertiary} />
+                    </Pressable>
                   </View>
-                </View>
+                </Pressable>
               );
             })}
           </View>
         )}
       </ScrollView>
+
+      {/* Task Creation/Edit Modal */}
+      <Modal
+        visible={showTaskModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {editingTask ? "Edit Task" : "New Task"}
+            </Text>
+            <Pressable onPress={closeTaskModal}>
+              <Feather name="x" size={22} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.modalContent} keyboardShouldPersistTaps="handled">
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>TITLE</Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
+              value={taskTitle}
+              onChangeText={setTaskTitle}
+              placeholder="What needs to be done?"
+              placeholderTextColor={theme.textTertiary}
+              autoFocus
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>DESCRIPTION</Text>
+            <TextInput
+              style={[styles.modalTextArea, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
+              value={taskDescription}
+              onChangeText={setTaskDescription}
+              placeholder="Add details..."
+              placeholderTextColor={theme.textTertiary}
+              multiline
+              numberOfLines={3}
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>PROJECT</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectSelector}>
+              {projects.map((project) => (
+                <Pressable
+                  key={project.id}
+                  style={[
+                    styles.projectOption,
+                    { backgroundColor: project.color + "22", borderColor: selectedProject === project.id ? project.color : "transparent" }
+                  ]}
+                  onPress={() => setSelectedProject(project.id)}
+                >
+                  <View style={[styles.projectDot, { backgroundColor: project.color }]} />
+                  <Text style={[styles.projectName, { color: theme.text }]}>{project.name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>PRIORITY</Text>
+            <View style={styles.prioritySelector}>
+              {(["high", "medium", "low"] as Task["priority"][]).map((priority) => {
+                const priorityColor = priority === "high" ? Colors.danger : 
+                                   priority === "medium" ? Colors.warning : Colors.accent;
+                return (
+                  <Pressable
+                    key={priority}
+                    style={[
+                      styles.priorityOption,
+                      { 
+                        backgroundColor: taskPriority === priority ? priorityColor + "22" : theme.surface,
+                        borderColor: taskPriority === priority ? priorityColor : theme.border
+                      }
+                    ]}
+                    onPress={() => setTaskPriority(priority)}
+                  >
+                    <Text style={[styles.priorityOptionText, { color: taskPriority === priority ? priorityColor : theme.text }]}>
+                      {priority.charAt(0).toUpperCase() + priority.slice(1)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {selectedDay && (
+              <View style={[styles.dueDateInfo, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Feather name="calendar" size={16} color={Colors.primary} />
+                <Text style={[styles.dueDateText, { color: theme.text }]}>
+                  Due: {MONTHS[month]} {selectedDay}, {year}
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={[styles.modalFooter, { borderTopColor: theme.border }]}>
+            <Pressable
+              style={[styles.modalBtn, styles.cancelBtn, { backgroundColor: theme.surface, borderColor: theme.border }]}
+              onPress={closeTaskModal}
+            >
+              <Text style={[styles.cancelBtnText, { color: theme.text }]}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modalBtn, styles.saveBtn, { backgroundColor: taskTitle.trim() ? Colors.primary : theme.surfaceSecondary }]}
+              onPress={handleSaveTask}
+              disabled={!taskTitle.trim()}
+            >
+              <Text style={[styles.saveBtnText, { color: taskTitle.trim() ? "#fff" : theme.textTertiary }]}>
+                {editingTask ? "Update" : "Create"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -408,10 +644,124 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
   },
-  taskDot: { width: 8, height: 8, borderRadius: 4 },
+  taskCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   taskContent: { flex: 1 },
-  taskTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  taskDone: { textDecorationLine: "line-through" },
+  taskTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 2 },
+  taskDescription: { fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 2 },
+  taskProject: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  taskDone: { textDecorationLine: "line-through", opacity: 0.6 },
+  taskActions: { alignItems: "flex-end", gap: 8 },
+  deleteTaskBtn: { padding: 4 },
+  priorityBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  priorityText: { fontSize: 10, fontFamily: "Inter_600SemiBold", letterSpacing: 0.3 },
+  
+  // Header styles
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
+  },
+  addTaskBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addTaskBtnText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  
+  // Modal styles
+  modalContainer: { flex: 1 },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+  },
+  modalTitle: { fontSize: 20, fontFamily: "Inter_700Bold" },
+  modalContent: { flex: 1, padding: 20 },
+  fieldLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  modalInput: {
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+    borderWidth: 1,
+  },
+  modalTextArea: {
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+    borderWidth: 1,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  projectSelector: { flexDirection: "row", gap: 8 },
+  projectOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 2,
+    marginRight: 8,
+  },
+  projectDot: { width: 8, height: 8, borderRadius: 4 },
+  projectName: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  prioritySelector: { flexDirection: "row", gap: 8 },
+  priorityOption: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  priorityOptionText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  dueDateInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  dueDateText: { fontSize: 14, fontFamily: "Inter_500Medium" },
+  modalFooter: {
+    flexDirection: "row",
+    gap: 12,
+    padding: 20,
+    borderTopWidth: 1,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  cancelBtn: { borderWidth: 1 },
+  saveBtn: {},
+  cancelBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  saveBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   taskProject: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
   priorityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   priorityText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
