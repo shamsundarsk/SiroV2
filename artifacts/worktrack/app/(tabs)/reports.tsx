@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Dimensions,
   Platform,
@@ -26,12 +26,13 @@ const BAR_CHART_W = SCREEN_W - 56;
 type ReportView = "daily" | "weekly" | "summary";
 
 export default function ReportsScreen() {
-  const { timeEntries, projects, deleteTimeEntry, updateTimeEntry } = useApp();
+  const { timeEntries, projects, deleteTimeEntry, updateTimeEntry, runningTimer } = useApp();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<ReportView>("daily");
+  const [, forceUpdate] = useState({});
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -46,6 +47,27 @@ export default function ReportsScreen() {
     [todayEntries]
   );
 
+  // Include running timer in today's total
+  // Include running timer in today's total
+  const runningTimerDuration = useMemo(() => {
+    if (!runningTimer) return 0;
+    return Math.floor((Date.now() - runningTimer.startTime) / 1000);
+  }, [runningTimer]);
+
+  // Real-time timer updates
+  useEffect(() => {
+    if (!runningTimer) return;
+    
+    const interval = setInterval(() => {
+      // Force re-render to update running timer displays
+      forceUpdate({});
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [runningTimer]);
+
+  const todayTotalWithRunning = todayTotal + runningTimerDuration;
+
   const weekStart = useMemo(() => getWeekStart(new Date()), []);
 
   const weeklyData = useMemo(() => {
@@ -59,14 +81,19 @@ export default function ReportsScreen() {
       const label = day.toLocaleDateString([], { weekday: "short" });
       const dayStart = new Date(day).setHours(0, 0, 0, 0);
       const dayEnd = new Date(day).setHours(23, 59, 59, 999);
-      const total = timeEntries
+      let total = timeEntries
         .filter((e) => e.startTime >= dayStart && e.startTime <= dayEnd)
         .reduce((s, e) => s + e.duration, 0);
-      const isCurrentDay =
-        day.toDateString() === new Date().toDateString();
+      
+      // Add running timer if it's today
+      const isCurrentDay = day.toDateString() === new Date().toDateString();
+      if (isCurrentDay && runningTimer) {
+        total += Math.floor((Date.now() - runningTimer.startTime) / 1000);
+      }
+      
       return { label, total, isCurrentDay };
     });
-  }, [weekStart, timeEntries]);
+  }, [weekStart, timeEntries, runningTimer]);
 
   const maxWeekly = Math.max(...weeklyData.map((d) => d.total), 1);
 
@@ -75,6 +102,13 @@ export default function ReportsScreen() {
     timeEntries.forEach((e) => {
       map[e.projectId] = (map[e.projectId] || 0) + e.duration;
     });
+    
+    // Add running timer to project summary
+    if (runningTimer) {
+      const runningDuration = Math.floor((Date.now() - runningTimer.startTime) / 1000);
+      map[runningTimer.projectId] = (map[runningTimer.projectId] || 0) + runningDuration;
+    }
+    
     return Object.entries(map)
       .map(([id, total]) => ({
         project: projects.find((p) => p.id === id),
@@ -82,7 +116,7 @@ export default function ReportsScreen() {
       }))
       .filter((x) => x.project)
       .sort((a, b) => b.total - a.total);
-  }, [timeEntries, projects]);
+  }, [timeEntries, projects, runningTimer]);
 
   const totalAllTime = projectSummary.reduce((s, x) => s + x.total, 0);
 
@@ -140,7 +174,7 @@ export default function ReportsScreen() {
           <>
             <View style={[styles.statCard, { backgroundColor: Colors.primary }]}>
               <Text style={styles.statLabel}>Today's Total</Text>
-              <Text style={styles.statValue}>{formatDurationHM(todayTotal)}</Text>
+              <Text style={styles.statValue}>{formatDurationHM(todayTotalWithRunning)}</Text>
               <Text style={styles.statSub}>{todayEntries.length} entries</Text>
             </View>
 

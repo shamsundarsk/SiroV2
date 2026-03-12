@@ -134,12 +134,12 @@ export default function OnboardingScreen() {
                 { icon: "bar-chart-2", title: "View Reports", desc: "Daily, weekly & project summaries" },
                 { icon: "activity", title: "Monitor Usage", desc: "See how your time is spent" },
                 { icon: "users", title: "Team Chat", desc: "Collaborate with your team" },
-              ].map((f) => (
-                <View key={f.icon} style={styles.featureRow}>
+              ].map((f, index) => (
+                <View key={f.icon} style={[styles.featureRow, index < 3 && { borderBottomWidth: 1, borderBottomColor: theme.border }]}>
                   <View style={[styles.featureIcon, { backgroundColor: Colors.primary + "18" }]}>
-                    <Feather name={f.icon as any} size={18} color={Colors.primary} />
+                    <Feather name={f.icon as any} size={20} color={Colors.primary} />
                   </View>
-                  <View>
+                  <View style={styles.featureTextContainer}>
                     <Text style={[styles.featureTitle, { color: theme.text }]}>{f.title}</Text>
                     <Text style={[styles.featureDesc, { color: theme.textSecondary }]}>{f.desc}</Text>
                   </View>
@@ -183,7 +183,12 @@ export default function OnboardingScreen() {
                 {
                   backgroundColor: theme.surface,
                   borderColor: role === "freelancer" ? Colors.primary : theme.border,
-                  borderWidth: role === "freelancer" ? 2 : 1,
+                  borderWidth: 2,
+                  shadowColor: role === "freelancer" ? Colors.primary : "transparent",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: role === "freelancer" ? 0.15 : 0,
+                  shadowRadius: 8,
+                  elevation: role === "freelancer" ? 4 : 0,
                 },
               ]}
               onPress={() => setRole("freelancer")}
@@ -199,7 +204,7 @@ export default function OnboardingScreen() {
               </View>
               {role === "freelancer" && (
                 <View style={[styles.roleCheck, { backgroundColor: Colors.primary }]}>
-                  <Feather name="check" size={14} color="#fff" />
+                  <Feather name="check" size={16} color="#fff" />
                 </View>
               )}
             </Pressable>
@@ -210,7 +215,12 @@ export default function OnboardingScreen() {
                 {
                   backgroundColor: theme.surface,
                   borderColor: role === "firm_worker" ? Colors.primary : theme.border,
-                  borderWidth: role === "firm_worker" ? 2 : 1,
+                  borderWidth: 2,
+                  shadowColor: role === "firm_worker" ? Colors.primary : "transparent",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: role === "firm_worker" ? 0.15 : 0,
+                  shadowRadius: 8,
+                  elevation: role === "firm_worker" ? 4 : 0,
                 },
               ]}
               onPress={() => setRole("firm_worker")}
@@ -226,7 +236,7 @@ export default function OnboardingScreen() {
               </View>
               {role === "firm_worker" && (
                 <View style={[styles.roleCheck, { backgroundColor: Colors.primary }]}>
-                  <Feather name="check" size={14} color="#fff" />
+                  <Feather name="check" size={16} color="#fff" />
                 </View>
               )}
             </Pressable>
@@ -367,20 +377,21 @@ export default function OnboardingScreen() {
         )}
 
         <View style={styles.buttonRow}>
-          {step > 0 && (
+          {step > 0 ? (
             <Pressable
               style={[styles.backBtn, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
               onPress={goPrev}
             >
               <Feather name="arrow-left" size={18} color={theme.text} />
             </Pressable>
+          ) : (
+            <View style={styles.backBtnPlaceholder} />
           )}
 
           {step < 3 ? (
             <Pressable
               style={[
                 styles.nextBtn,
-                { flex: step > 0 ? 1 : undefined, width: step === 0 ? "100%" : undefined },
                 step === 1 && !name.trim() && { opacity: 0.5 },
               ]}
               onPress={goNext}
@@ -399,7 +410,7 @@ export default function OnboardingScreen() {
               </LinearGradient>
             </Pressable>
           ) : (
-            <Pressable style={[styles.nextBtn, { flex: 1 }]} onPress={handleFinish}>
+            <Pressable style={styles.nextBtn} onPress={handleFinish}>
               <LinearGradient
                 colors={[Colors.accent, "#059669"]}
                 style={styles.nextBtnGradient}
@@ -433,9 +444,32 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontFamily: "Inter_700Bold", marginBottom: 6 },
   subtitle: { fontSize: 15, fontFamily: "Inter_400Regular", marginBottom: 28 },
   welcomeContent: { gap: 16 },
-  featureCard: { borderRadius: 16, padding: 4, borderWidth: 1 },
-  featureRow: { flexDirection: "row", alignItems: "center", gap: 14, padding: 14 },
-  featureIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  featureCard: { 
+    borderRadius: 20, 
+    padding: 0, 
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  featureRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 16, 
+    padding: 20,
+  },
+  featureTextContainer: {
+    flex: 1,
+  },
+  featureIcon: { 
+    width: 44, 
+    height: 44, 
+    borderRadius: 14, 
+    alignItems: "center", 
+    justifyContent: "center",
+  },
   featureTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   featureDesc: { fontSize: 12, fontFamily: "Inter_400Regular" },
   formContent: { gap: 12 },
@@ -495,24 +529,36 @@ const styles = StyleSheet.create({
   minuteRow: { flexDirection: "row", gap: 8 },
   minuteBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, alignItems: "center" },
   minuteBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  buttonRow: { flexDirection: "row", gap: 10, marginTop: 28 },
+  buttonRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 32 },
   backBtn: {
-    width: 50,
+    width: 54,
     height: 54,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  nextBtn: { borderRadius: 14, overflow: "hidden" },
+  backBtnPlaceholder: {
+    width: 54,
+    height: 54,
+  },
+  nextBtn: { 
+    flex: 1,
+    borderRadius: 16, 
+    overflow: "hidden",
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   nextBtnGradient: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 16,
+    paddingVertical: 18,
     paddingHorizontal: 24,
-    minWidth: 180,
   },
   nextBtnText: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold" },
 });

@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Platform,
   Pressable,
@@ -21,7 +21,7 @@ const MONTHS = [
 ];
 
 export default function CalendarScreen() {
-  const { timeEntries, tasks, projects } = useApp();
+  const { timeEntries, tasks, projects, runningTimer } = useApp();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = isDark ? Colors.dark : Colors.light;
@@ -29,6 +29,18 @@ export default function CalendarScreen() {
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate());
+
+  // Real-time timer updates
+  useEffect(() => {
+    if (!runningTimer) return;
+    
+    const interval = setInterval(() => {
+      // Force re-render to update running timer displays
+      setCurrentDate(prev => new Date(prev));
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [runningTimer]);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -59,8 +71,21 @@ export default function CalendarScreen() {
         map[day].projects.add(e.projectId);
       }
     });
+    
+    // Add running timer if it's in current month
+    if (runningTimer) {
+      const runningDate = new Date(runningTimer.startTime);
+      if (runningDate.getFullYear() === year && runningDate.getMonth() === month) {
+        const day = runningDate.getDate();
+        if (!map[day]) map[day] = { total: 0, projects: new Set() };
+        const runningDuration = Math.floor((Date.now() - runningTimer.startTime) / 1000);
+        map[day].total += runningDuration;
+        map[day].projects.add(runningTimer.projectId);
+      }
+    }
+    
     return map;
-  }, [timeEntries, year, month]);
+  }, [timeEntries, year, month, runningTimer]);
 
   const tasksByDay = useMemo(() => {
     const map: Record<number, number> = {};
@@ -78,11 +103,36 @@ export default function CalendarScreen() {
 
   const selectedEntries = useMemo(() => {
     if (!selectedDay) return [];
-    return timeEntries.filter((e) => {
+    const entries = timeEntries.filter((e) => {
       const d = new Date(e.startTime);
       return d.getFullYear() === year && d.getMonth() === month && d.getDate() === selectedDay;
     });
-  }, [timeEntries, year, month, selectedDay]);
+    
+    // Add running timer as a virtual entry if it's on the selected day
+    if (runningTimer) {
+      const runningDate = new Date(runningTimer.startTime);
+      if (
+        runningDate.getFullYear() === year &&
+        runningDate.getMonth() === month &&
+        runningDate.getDate() === selectedDay
+      ) {
+        const runningDuration = Math.floor((Date.now() - runningTimer.startTime) / 1000);
+        const virtualEntry = {
+          id: 'running-timer',
+          projectId: runningTimer.projectId,
+          category: runningTimer.category,
+          description: runningTimer.description,
+          startTime: runningTimer.startTime,
+          endTime: Date.now(),
+          duration: runningDuration,
+          isRunning: true,
+        };
+        return [virtualEntry, ...entries];
+      }
+    }
+    
+    return entries;
+  }, [timeEntries, year, month, selectedDay, runningTimer]);
 
   const selectedTasks = useMemo(() => {
     if (!selectedDay) return [];
@@ -229,6 +279,7 @@ export default function CalendarScreen() {
 
             {selectedEntries.map((entry) => {
               const proj = projects.find((p) => p.id === entry.projectId);
+              const isRunning = (entry as any).isRunning;
               return (
                 <View
                   key={entry.id}
@@ -237,7 +288,12 @@ export default function CalendarScreen() {
                   <View style={[styles.entryColorBar, { backgroundColor: proj?.color || Colors.primary }]} />
                   <View style={styles.entryContent}>
                     <View style={styles.entryTop}>
-                      <Text style={[styles.entryProject, { color: theme.text }]}>{proj?.name}</Text>
+                      <Text style={[styles.entryProject, { color: theme.text }]}>
+                        {proj?.name}
+                        {isRunning && (
+                          <Text style={{ color: Colors.accent, fontSize: 12 }}> • RUNNING</Text>
+                        )}
+                      </Text>
                       <Text style={[styles.entryDuration, { color: Colors.primary }]}>
                         {formatDurationHM(entry.duration)}
                       </Text>

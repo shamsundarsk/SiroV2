@@ -11,6 +11,7 @@ import {
   TextInput,
   View,
   useColorScheme,
+  Keyboard,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -178,6 +179,8 @@ export default function ChatScreen() {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets={true}
         ListEmptyComponent={
           <View style={styles.emptyChat}>
             <Feather name="message-circle" size={36} color={theme.textTertiary} />
@@ -198,6 +201,7 @@ export default function ChatScreen() {
             backgroundColor: theme.surface,
             borderTopColor: theme.border,
             paddingBottom: Math.max(bottomPad, 8) + 4,
+            minHeight: 64,
           },
         ]}
       >
@@ -220,6 +224,8 @@ export default function ChatScreen() {
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
           textAlignVertical="center"
+          autoCorrect={true}
+          autoCapitalize="sentences"
         />
         <Pressable
           style={[

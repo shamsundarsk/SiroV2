@@ -146,7 +146,13 @@ export default function TimerScreen() {
               </Pressable>
             </View>
 
-            <Text style={styles.activeTimerElapsed}>{formatDuration(elapsed)}</Text>
+            <View style={styles.activeTimerHeader}>
+              <Text style={styles.activeTimerElapsed}>{formatDuration(elapsed)}</Text>
+              <View style={styles.liveIndicator}>
+                <Animated.View style={[styles.liveDot, { transform: [{ scale: pulseAnim }] }]} />
+                <Text style={styles.liveText}>LIVE</Text>
+              </View>
+            </View>
             {runningTimer.description ? (
               <Text style={styles.activeTimerDesc}>{runningTimer.description}</Text>
             ) : null}
@@ -384,6 +390,31 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_700Bold",
     textAlign: "center",
     marginVertical: 8,
+  },
+  activeTimerHeader: {
+    alignItems: "center",
+    gap: 8,
+  },
+  liveIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.accent,
+  },
+  liveText: {
+    color: "#fff",
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.5,
   },
   activeTimerDesc: {
     color: "rgba(255,255,255,0.8)",
