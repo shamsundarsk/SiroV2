@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import {
   TaskCategory,
+  formatDuration,
   formatTimerDuration,
   formatTime,
   isToday,
