@@ -9,6 +9,8 @@ import React, {
   useState,
 } from "react";
 import { Alert, AppState, AppStateStatus } from "react-native";
+import NotificationService from "../services/SimpleNotificationService";
+// import ScreenTimeService from "../services/ScreenTimeService"; // Temporarily disabled
 
 export type TaskCategory =
   | "Design"
@@ -24,6 +26,7 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
+  mobile: string;
   role: UserRole;
   firmName: string;
   onboarded: boolean;
@@ -89,6 +92,8 @@ export interface AppUsageRecord {
   category: "social" | "entertainment" | "productivity" | "other";
 }
 
+const API_BASE_URL = "http://192.168.67.85:3000/api/worktrack";
+
 const STORAGE_KEYS = {
   PROJECTS: "worktrack:projects",
   TIME_ENTRIES: "worktrack:time_entries",
@@ -111,7 +116,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   taskReminderMinutes: 30,
   voiceAgentEnabled: true,
-  voiceAgentDelayMinutes: 5,
+  voiceAgentDelayMinutes: 10, // 10 seconds for demo
   monitoringEnabled: true,
   idleAlertMinutes: 20,
 };
@@ -138,6 +143,7 @@ interface AppContextValue {
   appUsageRecords: AppUsageRecord[];
   notifications: string[];
   voiceAgentActive: boolean;
+  notificationsEnabled: boolean;
 
   completeOnboarding: (profile: Omit<UserProfile, "id" | "onboarded">) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
@@ -158,6 +164,10 @@ interface AppContextValue {
   recordScreenTime: (screen: string, durationMs: number) => void;
   dismissNotification: (idx: number) => void;
   dismissVoiceAgent: () => void;
+  
+  syncToAPI: () => Promise<void>;
+  logout: () => void;
+  requestNotificationPermissions: () => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -190,6 +200,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [appUsageRecords, setAppUsageRecords] = useState<AppUsageRecord[]>([]);
   const [notifications, setNotifications] = useState<string[]>([]);
   const [voiceAgentActive, setVoiceAgentActive] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -208,6 +219,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     loadAll();
+    initializeNotifications();
+    // initializeScreenTimeTracking(); // Temporarily disabled
   }, []);
 
   async function loadAll() {
@@ -270,6 +283,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLoaded(true);
   }
 
+  async function initializeNotifications() {
+    const enabled = await NotificationService.initialize();
+    setNotificationsEnabled(enabled);
+
+    // Set up notification listeners
+    const notificationListener = NotificationService.addNotificationReceivedListener(
+      (notification) => {
+        console.log('Notification received:', notification);
+      }
+    );
+
+    const responseListener = NotificationService.addNotificationResponseReceivedListener(
+      (response) => {
+        console.log('Notification response:', response);
+        
+        // Simply log the response - the app should automatically come to foreground
+        // The blank screen issue might be due to the app state, so we'll just ensure
+        // the app is properly focused without additional navigation
+        console.log('Notification tapped - app should be in foreground now');
+      }
+    );
+
+    return () => {
+      notificationListener.remove();
+      responseListener.remove();
+    };
+  }
+
   const persist = useCallback(async (key: string, value: unknown) => {
     try {
       await AsyncStorage.setItem(key, JSON.stringify(value));
@@ -277,7 +318,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const completeOnboarding = useCallback(
-    (profile: Omit<UserProfile, "id" | "onboarded">) => {
+    async (profile: Omit<UserProfile, "id" | "onboarded">) => {
       const newProfile: UserProfile = {
         ...profile,
         id: genId(),
@@ -285,8 +326,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
       setUserProfile(newProfile);
       persist(STORAGE_KEYS.USER_PROFILE, newProfile);
+      
+      // Auto-sync after onboarding completion
+      try {
+        const syncData = {
+          userProfile: newProfile,
+          settings,
+          projects,
+          timeEntries,
+          runningTimer,
+          tasks
+        };
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        await fetch(`${API_BASE_URL}/sync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: newProfile.id,
+            data: syncData
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        console.log('Onboarding data synced successfully');
+      } catch (error) {
+        console.log('Auto-sync after onboarding failed (API server may be offline)');
+      }
     },
-    [persist]
+    [persist, settings, projects, timeEntries, runningTimer, tasks]
   );
 
   const updateSettings = useCallback(
@@ -307,10 +380,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setProjects((prev) => {
         const next = [...prev, newProj];
         persist(STORAGE_KEYS.PROJECTS, next);
+        
+        // Sync to API with userId
+        if (userProfile) {
+          setTimeout(async () => {
+            try {
+              await fetch(`${API_BASE_URL}/projects`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  ...project,
+                  userId: userProfile.id
+                })
+              });
+            } catch (error) {
+              console.log('Failed to sync project to API:', error);
+            }
+          }, 100);
+        }
+        
         return next;
       });
     },
-    [persist]
+    [persist, userProfile]
   );
 
   const deleteProject = useCallback(
@@ -325,16 +419,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const startTimer = useCallback(
-    (projectId: string, category: TaskCategory, description: string) => {
+    async (projectId: string, category: TaskCategory, description: string) => {
       const timer: RunningTimer = { projectId, category, description, startTime: Date.now() };
       setRunningTimer(timer);
       runningTimerRef.current = timer;
       persist(STORAGE_KEYS.RUNNING_TIMER, timer);
+      
+      // Auto-sync when timer starts
+      if (userProfile) {
+        try {
+          const syncData = {
+            userProfile,
+            settings,
+            projects,
+            timeEntries,
+            runningTimer: timer,
+            tasks
+          };
+
+          await fetch(`${API_BASE_URL}/sync`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId: userProfile.id,
+              data: syncData
+            })
+          });
+        } catch (error) {
+          console.log('Auto-sync after timer start failed:', error);
+        }
+      }
     },
-    [persist]
+    [persist, userProfile, settings, projects, timeEntries, tasks]
   );
 
-  const stopTimer = useCallback(() => {
+  const stopTimer = useCallback(async () => {
     if (voiceAgentTimerRef.current) {
       clearTimeout(voiceAgentTimerRef.current);
       voiceAgentTimerRef.current = null;
@@ -357,13 +478,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setTimeEntries((entries) => {
         const next = [entry, ...entries];
         persist(STORAGE_KEYS.TIME_ENTRIES, next);
+        
+        // Auto-sync when timer stops
+        if (userProfile) {
+          setTimeout(async () => {
+            try {
+              const syncData = {
+                userProfile,
+                settings,
+                projects,
+                timeEntries: next,
+                runningTimer: null,
+                tasks
+              };
+
+              await fetch(`${API_BASE_URL}/sync`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  userId: userProfile.id,
+                  data: syncData
+                })
+              });
+            } catch (error) {
+              console.log('Auto-sync after timer stop failed:', error);
+            }
+          }, 100);
+        }
+        
         return next;
       });
       persist(STORAGE_KEYS.RUNNING_TIMER, null);
       runningTimerRef.current = null;
       return null;
     });
-  }, [persist]);
+  }, [persist, userProfile, settings, projects, tasks]);
 
   const addManualEntry = useCallback(
     (entry: Omit<TimeEntry, "id">) => {
@@ -400,15 +551,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addTask = useCallback(
-    (task: Omit<Task, "id" | "createdAt">) => {
+    async (task: Omit<Task, "id" | "createdAt">) => {
       const newTask: Task = { ...task, id: genId(), createdAt: Date.now() };
       setTasks((prev) => {
         const next = [newTask, ...prev];
         persist(STORAGE_KEYS.TASKS, next);
+        
+        // Schedule notifications for task if it has a due date
+        if (newTask.dueDate && settings.notificationsEnabled && notificationsEnabled) {
+          // Schedule reminder notification
+          NotificationService.scheduleTaskReminder(
+            newTask.title,
+            newTask.id,
+            newTask.dueDate,
+            settings.taskReminderMinutes
+          );
+          
+          // Schedule due notification
+          NotificationService.scheduleTaskDueNotification(
+            newTask.title,
+            newTask.id,
+            newTask.dueDate
+          );
+        }
+        
+        // Auto-sync when task is created
+        if (userProfile) {
+          setTimeout(async () => {
+            try {
+              const syncData = {
+                userProfile,
+                settings,
+                projects,
+                timeEntries,
+                runningTimer,
+                tasks: next
+              };
+
+              await fetch(`${API_BASE_URL}/sync`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  userId: userProfile.id,
+                  data: syncData
+                })
+              });
+            } catch (error) {
+              console.log('Auto-sync after task creation failed:', error);
+            }
+          }, 100);
+        }
+        
         return next;
       });
     },
-    [persist]
+    [persist, userProfile, settings, projects, timeEntries, runningTimer, notificationsEnabled]
   );
 
   const updateTask = useCallback(
@@ -460,6 +659,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           persist(STORAGE_KEYS.NOTIFICATIONS, next);
           return next;
         });
+        
+        // Send push notification for idle alert
+        if (notificationsEnabled) {
+          NotificationService.sendIdleAlert(Math.floor(durationMs / 60000));
+        }
       }
     },
     [persist]
@@ -493,9 +697,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         appBgStartRef.current = Date.now();
 
         if (timer && s.voiceAgentEnabled) {
-          const delayMs = s.voiceAgentDelayMinutes * 60 * 1000;
+          const delayMs = s.voiceAgentDelayMinutes * 1000; // Changed to seconds for demo
           voiceAgentTimerRef.current = setTimeout(() => {
             setVoiceAgentActive(true);
+            // Send voice agent notification immediately when backgrounded with timer
+            if (notificationsEnabled) {
+              NotificationService.sendVoiceAgentAlert();
+            }
+            console.log('🤖 Voice Agent Activated - Employee left app with running timer!');
           }, delayMs);
         }
       }
@@ -543,6 +752,83 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.remove();
   }, [persist]);
 
+  const syncToAPI = useCallback(async () => {
+    if (!userProfile) return;
+    
+    try {
+      const syncData = {
+        userProfile,
+        settings,
+        projects,
+        timeEntries,
+        runningTimer,
+        tasks
+      };
+
+      const response = await fetch(`${API_BASE_URL}/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: userProfile.id,
+          data: syncData
+        }),
+        timeout: 5000 // 5 second timeout
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      console.log('Data synced to API successfully');
+    } catch (error) {
+      console.log('Sync failed (API server may be offline):', error.message);
+      // Don't show error to user - sync will retry later
+    }
+  }, [userProfile, settings, projects, timeEntries, runningTimer, tasks]);
+
+  const logout = useCallback(async () => {
+    try {
+      // Clear all local storage
+      await Promise.all([
+        AsyncStorage.removeItem(STORAGE_KEYS.USER_PROFILE),
+        AsyncStorage.removeItem(STORAGE_KEYS.SETTINGS),
+        AsyncStorage.removeItem(STORAGE_KEYS.PROJECTS),
+        AsyncStorage.removeItem(STORAGE_KEYS.TIME_ENTRIES),
+        AsyncStorage.removeItem(STORAGE_KEYS.RUNNING_TIMER),
+        AsyncStorage.removeItem(STORAGE_KEYS.TASKS),
+        AsyncStorage.removeItem(STORAGE_KEYS.SCREEN_TIME),
+        AsyncStorage.removeItem(STORAGE_KEYS.APP_USAGE),
+        AsyncStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS),
+      ]);
+
+      // Reset all state
+      setUserProfile(null);
+      setSettings(DEFAULT_SETTINGS);
+      setProjects([]);
+      setTimeEntries([]);
+      setRunningTimer(null);
+      setTasks([]);
+      setScreenTimeRecords([]);
+      setAppUsageRecords([]);
+      setNotifications([]);
+      setVoiceAgentActive(false);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  }, []);
+
+  const requestNotificationPermissions = useCallback(async (): Promise<boolean> => {
+    const enabled = await NotificationService.initialize();
+    setNotificationsEnabled(enabled);
+    return enabled;
+  }, []);
+
+  // async function initializeScreenTimeTracking() {
+  //   // Temporarily disabled - will re-enable after fixing package issues
+  // }
+
   const value = useMemo(
     () => ({
       userProfile,
@@ -555,6 +841,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       appUsageRecords,
       notifications,
       voiceAgentActive,
+      notificationsEnabled,
       completeOnboarding,
       updateSettings,
       addProject,
@@ -570,13 +857,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       recordScreenTime,
       dismissNotification,
       dismissVoiceAgent,
+      syncToAPI,
+      logout,
+      requestNotificationPermissions,
     }),
     [
       userProfile, settings, projects, timeEntries, runningTimer,
-      tasks, screenTimeRecords, appUsageRecords, notifications, voiceAgentActive,
+      tasks, screenTimeRecords, appUsageRecords, notifications, voiceAgentActive, notificationsEnabled,
       completeOnboarding, updateSettings, addProject, deleteProject, startTimer,
       stopTimer, addManualEntry, updateTimeEntry, deleteTimeEntry,
       addTask, updateTask, deleteTask, recordScreenTime, dismissNotification, dismissVoiceAgent,
+      syncToAPI, logout, requestNotificationPermissions,
     ]
   );
 

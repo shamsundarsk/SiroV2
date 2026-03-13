@@ -26,7 +26,7 @@ const { width: SCREEN_W } = Dimensions.get("window");
 type Step = 0 | 1 | 2 | 3;
 
 export default function OnboardingScreen() {
-  const { completeOnboarding, updateSettings } = useApp();
+  const { completeOnboarding, updateSettings, requestNotificationPermissions } = useApp();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = isDark ? Colors.dark : Colors.light;
@@ -35,6 +35,7 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState<Step>(0);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [mobile, setMobile] = useState("");
   const [role, setRole] = useState<UserRole>("freelancer");
   const [firmName, setFirmName] = useState("");
   const [notifEnabled, setNotifEnabled] = useState(true);
@@ -58,9 +59,19 @@ export default function OnboardingScreen() {
     setStep((s) => Math.max(s - 1, 0) as Step);
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    completeOnboarding({ name, email, role, firmName });
+    
+    // Request notification permissions if notifications are enabled
+    if (notifEnabled) {
+      const permissionGranted = await requestNotificationPermissions();
+      if (!permissionGranted) {
+        // User denied permissions, but continue with onboarding
+        console.log('Notification permissions denied');
+      }
+    }
+    
+    completeOnboarding({ name, email, mobile, role, firmName });
     updateSettings({
       notificationsEnabled: notifEnabled,
       voiceAgentEnabled: voiceEnabled,
@@ -170,6 +181,17 @@ export default function OnboardingScreen() {
               placeholder="you@example.com"
               placeholderTextColor={theme.textTertiary}
               keyboardType="email-address"
+              autoCapitalize="none"
+            />
+
+            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>MOBILE NUMBER *</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
+              value={mobile}
+              onChangeText={setMobile}
+              placeholder="+1 (555) 123-4567"
+              placeholderTextColor={theme.textTertiary}
+              keyboardType="phone-pad"
               autoCapitalize="none"
             />
           </View>
@@ -392,10 +414,10 @@ export default function OnboardingScreen() {
             <Pressable
               style={[
                 styles.nextBtn,
-                step === 1 && !name.trim() && { opacity: 0.5 },
+                step === 1 && (!name.trim() || !email.trim() || !mobile.trim()) && { opacity: 0.5 },
               ]}
               onPress={goNext}
-              disabled={step === 1 && !name.trim()}
+              disabled={step === 1 && (!name.trim() || !email.trim() || !mobile.trim())}
             >
               <LinearGradient
                 colors={[Colors.primary, Colors.primaryDark]}

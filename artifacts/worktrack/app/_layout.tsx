@@ -18,7 +18,9 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Colors from "@/constants/colors";
 import { AppProvider, useApp } from "@/context/AppContext";
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Ignore errors if splash screen is already handled
+});
 
 const queryClient = new QueryClient();
 

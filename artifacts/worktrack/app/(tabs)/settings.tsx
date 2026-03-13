@@ -15,9 +15,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Colors from "@/constants/colors";
 import { UserRole, useApp } from "@/context/AppContext";
+import ProcrastinationDemo from "@/components/ProcrastinationDemo";
 
 const MINUTE_OPTIONS = [5, 10, 15, 20, 30, 45, 60];
-const VOICE_DELAY_OPTIONS = [1, 2, 5, 10, 15];
+const VOICE_DELAY_OPTIONS = [5, 10, 15, 30, 60]; // Changed to seconds for demo
 const IDLE_ALERT_OPTIONS = [10, 15, 20, 30, 60];
 
 function SectionHeader({ title, color }: { title: string; color?: string }) {
@@ -105,7 +106,7 @@ function ChipRow({
 }
 
 export default function SettingsScreen() {
-  const { settings, updateSettings, userProfile } = useApp();
+  const { settings, updateSettings, userProfile, logout, syncToAPI, notificationsEnabled, requestNotificationPermissions } = useApp();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = isDark ? Colors.dark : Colors.light;
@@ -139,6 +140,9 @@ export default function SettingsScreen() {
           <View style={styles.profileInfo}>
             <Text style={[styles.profileName, { color: theme.text }]}>{userProfile?.name || "Worker"}</Text>
             <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>{userProfile?.email || ""}</Text>
+            {userProfile?.mobile && (
+              <Text style={[styles.profileEmail, { color: theme.textSecondary }]}>{userProfile.mobile}</Text>
+            )}
             <View style={[styles.roleBadge, { backgroundColor: Colors.primary + "18" }]}>
               <Feather name={roleIcon as any} size={11} color={Colors.primary} />
               <Text style={[styles.roleBadgeText, { color: Colors.primary }]}>{roleLabel}</Text>
@@ -161,6 +165,26 @@ export default function SettingsScreen() {
           value={settings.notificationsEnabled}
           onToggle={() => updateSettings({ notificationsEnabled: !settings.notificationsEnabled })}
         />
+
+        {!notificationsEnabled && settings.notificationsEnabled && (
+          <Pressable
+            style={[styles.permissionButton, { backgroundColor: Colors.warning + "10", borderColor: Colors.warning + "30" }]}
+            onPress={async () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              const granted = await requestNotificationPermissions();
+              if (granted) {
+                Alert.alert("Success", "Notification permissions granted!");
+              } else {
+                Alert.alert("Permission Denied", "Please enable notifications in your device settings to receive task reminders.");
+              }
+            }}
+          >
+            <Feather name="alert-triangle" size={16} color={Colors.warning} />
+            <Text style={[styles.permissionButtonText, { color: Colors.warning }]}>
+              Grant Notification Permission
+            </Text>
+          </Pressable>
+        )}
 
         {settings.notificationsEnabled && (
           <>
@@ -200,19 +224,19 @@ export default function SettingsScreen() {
         {settings.voiceAgentEnabled && (
           <>
             <Text style={[styles.subLabel, { color: theme.textSecondary }]}>
-              Call after leaving app (minutes)
+              Call after leaving app (seconds)
             </Text>
             <ChipRow
               options={VOICE_DELAY_OPTIONS}
               selected={settings.voiceAgentDelayMinutes}
               onSelect={(v) => updateSettings({ voiceAgentDelayMinutes: v })}
-              suffix="m"
+              suffix="s"
             />
 
             <View style={[styles.infoBox, { backgroundColor: Colors.primary + "10", borderColor: Colors.primary + "30" }]}>
               <Feather name="info" size={14} color={Colors.primary} />
               <Text style={[styles.infoText, { color: Colors.primary }]}>
-                When you leave the app with a running timer, the AI agent will alert you after {settings.voiceAgentDelayMinutes} minute{settings.voiceAgentDelayMinutes > 1 ? "s" : ""} to stop procrastinating.
+                When you leave the app with a running timer, the AI agent will alert you after {settings.voiceAgentDelayMinutes} second{settings.voiceAgentDelayMinutes > 1 ? "s" : ""} to stop procrastinating.
               </Text>
             </View>
           </>
@@ -271,6 +295,52 @@ export default function SettingsScreen() {
             Professional time tracking for individuals and teams. Your data stays private on your device.
           </Text>
         </View>
+
+        <SectionHeader title="DEMO & TESTING" />
+        <ProcrastinationDemo />
+
+        <SectionHeader title="ACCOUNT" />
+        
+        <Pressable
+          style={[styles.syncButton, { backgroundColor: Colors.primary, borderColor: Colors.primary }]}
+          onPress={async () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            try {
+              await syncToAPI();
+              Alert.alert("Success", "Your data has been synced to the server successfully!");
+            } catch (error) {
+              Alert.alert("Error", "Failed to sync data. Please try again.");
+            }
+          }}
+        >
+          <Feather name="upload-cloud" size={18} color="#fff" />
+          <Text style={[styles.syncButtonText, { color: "#fff" }]}>Sync Data to Server</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.logoutButton, { backgroundColor: Colors.error + "10", borderColor: Colors.error }]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            Alert.alert(
+              "Logout",
+              "Are you sure you want to logout? All local data will be cleared.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Logout",
+                  style: "destructive",
+                  onPress: () => {
+                    logout();
+                    Alert.alert("Logged Out", "You have been logged out successfully.");
+                  }
+                }
+              ]
+            );
+          }}
+        >
+          <Feather name="log-out" size={18} color={Colors.error} />
+          <Text style={[styles.logoutButtonText, { color: Colors.error }]}>Logout & Clear Data</Text>
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -396,4 +466,36 @@ const styles = StyleSheet.create({
   aboutTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
   aboutVersion: { fontSize: 13, fontFamily: "Inter_500Medium" },
   aboutDesc: { fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 18, marginTop: 4 },
+  syncButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  syncButtonText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  logoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  logoutButtonText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  permissionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  permissionButtonText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
 });
